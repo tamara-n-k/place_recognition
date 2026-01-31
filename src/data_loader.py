@@ -32,9 +32,11 @@ def load_nclt_scan(bin_path):
     return np.array(hits)
 
 
-
-def scan_generator(scan_dir):
+def scan_generator(scan_dir, step=10):
     files = sorted(os.listdir(scan_dir))
-    for fname in files:
-        if fname.endswith(".bin"):
-            yield fname, load_nclt_scan(os.path.join(scan_dir, fname))
+    bin_files = [f for f in files if f.endswith(".bin")]
+
+    for i in range(0, len(bin_files), step):
+        fname = bin_files[i]
+        yield fname, load_nclt_scan(os.path.join(scan_dir, fname))
+
