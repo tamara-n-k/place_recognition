@@ -4,6 +4,8 @@ from src.descriptor import ScanContext
 from src.similarity import scan_context_nn_distance
 import os
 from pathlib import Path
+from sklearn.metrics import precision_recall_curve, average_precision_score
+import matplotlib.pyplot as plt
 
 ROOT_DIR = Path(__file__).parent.parent
 print(ROOT_DIR)
@@ -11,6 +13,13 @@ SCAN_DIR = os.path.join(ROOT_DIR, "data/2012-01-08_vel/2012-01-08/velodyne_sync"
 GT_DIR = os.path.join(ROOT_DIR, "data/groundtruth_2012-01-08.csv")
 MATCH_THRESHOLD = 0.03
 sc = ScanContext()
+predictions = []
+gt_labels = []
+scores = []
+descriptors = []
+scan_ids = []
+scan_positions = []
+
 
 def load_ground_truth(gt_csv):
     gt = np.loadtxt(gt_csv, delimiter=",")
@@ -42,33 +51,56 @@ def find_best_match(i, descriptors):
 
 gt_ts, gt_pos = load_ground_truth(GT_DIR)
 
-descriptors = []
-scan_ids = []
-scan_positions = []
+def compute_metrics(gt_labels, scores):
+    precision, recall, thresholds = precision_recall_curve(gt_labels, scores)
+    ap = average_precision_score(gt_labels, scores)
 
-for scan_id, points in scan_generator(SCAN_DIR):
-    ts = scan_timestamp_from_filename(scan_id)
-    pose_xy = get_pose_for_scan(ts, gt_ts, gt_pos)
+    print(f"Average Precision (AP): {ap:.4f}")
 
-    desc = sc.compute(points)
+    plt.plot(recall, precision)
+    plt.xlabel("Recall")
+    plt.ylabel("Precision")
+    plt.title("Precision-Recall Curve")
+    plt.grid(True)
+    plt.show()
 
-    if len(descriptors) > 0:
-        distances = [scan_context_nn_distance(desc, d) for d in descriptors]
-        best_dist = min(distances)
-        best_idx = distances.index(best_dist)
+def run_matching():
+    for scan_id, points in scan_generator(SCAN_DIR):
+        ts = scan_timestamp_from_filename(scan_id)
+        pose_xy = get_pose_for_scan(ts, gt_ts, gt_pos)
 
-        gt_dist = np.linalg.norm(pose_xy - scan_positions[best_idx])
+        desc = sc.compute(points)
 
-        if best_dist < MATCH_THRESHOLD:
-            if gt_dist < 1.0:
-                print(f"{scan_id}: TRUE match ({gt_dist:.1f} m)")
+        if len(descriptors) > 0:
+            distances = [scan_context_nn_distance(desc, d) for d in descriptors]
+            best_dist = min(distances)
+            best_idx = distances.index(best_dist)
+
+            gt_dist = np.linalg.norm(pose_xy - scan_positions[best_idx])
+            gt_label = int(gt_dist < 5.0)           # ground truth "same place"
+            pred = int(best_dist < MATCH_THRESHOLD)  # predicted "same place"
+
+            if pred:
+                if gt_label:
+                    print(f"{scan_id}: TRUE match (gt dist={gt_dist:.2f} m, sim={best_dist:.3f})")
+                else:
+                    print(f"{scan_id}: FALSE match (gt dist={gt_dist:.2f} m, sim={best_dist:.3f})")
             else:
-                print(f"{scan_id}: FALSE match ({gt_dist:.1f} m)")
-        else:
-            print(f"{scan_id}: No match")
-    else:
-        print(f"{scan_id}: First scan")
+                print(f"{scan_id}: No match (best sim={best_dist:.3f})")
 
-    descriptors.append(desc)
-    scan_ids.append(scan_id)
-    scan_positions.append(pose_xy)
+            predictions.append(pred)
+            gt_labels.append(gt_label)
+            scores.append(-best_dist)  # invert for sklearn (higher score == more confident)
+
+        else:
+            print(f"{scan_id}: First scan (no previous data)")
+            pass
+
+        descriptors.append(desc)
+        scan_ids.append(scan_id)
+        scan_positions.append(pose_xy)
+    return gt_labels, scores
+
+if __name__ == "__main__":
+    gt_labels, scores = run_matching()
+    compute_metrics(gt_labels, scores)
