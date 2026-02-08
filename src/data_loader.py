@@ -32,7 +32,7 @@ def load_nclt_scan(bin_path):
     return np.array(hits)
 
 
-def scan_generator(scan_dir, step=10):
+def scan_generator(scan_dir, step=100):
     files = sorted(os.listdir(scan_dir))
     bin_files = [f for f in files if f.endswith(".bin")]
 
@@ -40,3 +40,8 @@ def scan_generator(scan_dir, step=10):
         fname = bin_files[i]
         yield fname, load_nclt_scan(os.path.join(scan_dir, fname))
 
+def load_ground_truth(gt_csv):
+    gt = np.loadtxt(gt_csv, delimiter=",")
+    timestamps = gt[:, 0]
+    positions = gt[:, 1:3]  # x, y
+    return timestamps, positions
