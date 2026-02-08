@@ -1,5 +1,5 @@
 import numpy as np
-from src.data_loader import scan_generator
+from src.data_loader import scan_generator, load_ground_truth
 from src.descriptor import ScanContext
 from src.similarity import scan_context_nn_distance
 import os
@@ -8,7 +8,6 @@ from sklearn.metrics import precision_recall_curve, average_precision_score
 import matplotlib.pyplot as plt
 
 ROOT_DIR = Path(__file__).parent.parent
-print(ROOT_DIR)
 SCAN_DIR = os.path.join(ROOT_DIR, "data/2012-01-08_vel/2012-01-08/velodyne_sync")
 GT_DIR = os.path.join(ROOT_DIR, "data/groundtruth_2012-01-08.csv")
 MATCH_THRESHOLD = 0.03
@@ -19,13 +18,6 @@ scores = []
 descriptors = []
 scan_ids = []
 scan_positions = []
-
-
-def load_ground_truth(gt_csv):
-    gt = np.loadtxt(gt_csv, delimiter=",")
-    timestamps = gt[:, 0]
-    positions = gt[:, 1:3]  # x, y
-    return timestamps, positions
 
 def scan_timestamp_from_filename(fname):
     return int(fname.replace(".bin", ""))
