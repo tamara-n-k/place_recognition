@@ -7,39 +7,37 @@ class ScanContext:
         self.num_sectors = num_sectors
         self.max_range = max_range
 
-        self.ring_size = max_range / num_rings
-        self.sector_size = 2 * np.pi / num_sectors
 
     def compute(self, points):
-        desc = np.full(
-            (self.num_rings, self.num_sectors),
-            -np.inf
-        )
-
         x, y, z = points[:, 0], points[:, 1], points[:, 2]
 
+        # flip Z: LIDAR is upside down
+        z_up = -z 
+        
+        # filter: 0.2m to 10m above the ground
+        mask = (z_up > 0.2) & (z_up < 10.0) 
+        x, y, z_up = x[mask], y[mask], z_up[mask]
+
+        # convert to polar coordinates
         r = np.sqrt(x**2 + y**2)
         theta = np.arctan2(y, x)
-        theta = (theta + 2 * np.pi) % (2 * np.pi)
+        theta[theta < 0] += 2 * np.pi
 
-        mask = r < self.max_range
-        r, theta, z = r[mask], theta[mask], z[mask]
+        # Binning
+        # rings
+        r_bin = np.floor(r / self.max_range * self.num_rings).astype(int)
+        # sectors
+        s_bin = np.floor(theta / (2 * np.pi) * self.num_sectors).astype(int)
 
-        ring_idx = (r / self.ring_size).astype(int)
-        sector_idx = (theta / self.sector_size).astype(int)
+        # check boundaries
+        valid = (r_bin >= 0) & (r_bin < self.num_rings) & \
+                (s_bin >= 0) & (s_bin < self.num_sectors)
+        
+        r_bin, s_bin, z_vals = r_bin[valid], s_bin[valid], z_up[valid]
 
-        ring_idx = np.clip(ring_idx, 0, self.num_rings - 1)
-        sector_idx = np.clip(sector_idx, 0, self.num_sectors - 1)
-
-        for i in range(len(r)):
-            ri = ring_idx[i]
-            si = sector_idx[i]
-            desc[ri, si] = max(desc[ri, si], z[i])
-
-        desc[desc == -np.inf] = 0.0
-
-        norm = np.linalg.norm(desc)
-        if norm > 0:
-            desc /= norm
-
+        desc = np.zeros((self.num_rings, self.num_sectors), dtype=np.float32)
+        
+        # fill descriptor with maximum height found in each bin
+        np.maximum.at(desc, (r_bin, s_bin), z_vals)
+        
         return desc
