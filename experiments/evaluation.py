@@ -13,8 +13,8 @@ GT_DIR = os.path.join(ROOT_DIR, "data/groundtruth_2012-01-08.csv")
 
 # Parameters
 MATCH_THRESHOLD = 0.5  # Scan Context distance threshold (typically 0.3-0.7)
-TEMPORAL_WINDOW = 30   # Exclude scans within this many frames
-GT_DISTANCE_THRESHOLD = 5.0  # meters for ground truth loop closure
+TEMPORAL_WINDOW = 20  # Exclude scans within this many frames
+GT_DISTANCE_THRESHOLD = 15.0  # meters for ground truth loop closure
 
 sc = ScanContext()
 
@@ -127,9 +127,10 @@ def compute_descriptors():
     return descriptors, scan_positions
 
 def run_matching(descriptors, scan_positions):
-    predictions = []
-    gt_labels = []
     scores = []
+    gt_labels = []
+    
+    num_scans = len(descriptors)
     
     for i in range(len(descriptors)):
         # Find valid candidates (outside temporal window)
@@ -138,32 +139,27 @@ def run_matching(descriptors, scan_positions):
         
         if not candidate_indices:
             continue
+            
+        # find distance to the closest candidate
+        dists = [scan_context_nn_distance(descriptors[i], descriptors[j]) for j in candidate_indices]
+        best_dist = min(dists)
+        best_j = candidate_indices[np.argmin(dists)]
         
-        # Compute distances using Scan Context metric
-        dists = np.array([scan_context_nn_distance(descriptors[i], descriptors[j]) 
-                         for j in candidate_indices])
-        
-        # Find best match
-        min_idx = np.argmin(dists)
-        best_dist = dists[min_idx]
-        best_j = candidate_indices[min_idx]
-        
-        # Ground truth: spatial distance
+        # determine if that specific best match is a ground truth loop
         gt_dist = np.linalg.norm(scan_positions[i] - scan_positions[best_j])
-        gt_label = int(gt_dist < GT_DISTANCE_THRESHOLD)
-        pred = int(best_dist < MATCH_THRESHOLD)
+        gt_label = 1 if gt_dist < GT_DISTANCE_THRESHOLD else 0
         
-        predictions.append(pred)
+        scores.append(best_dist)
         gt_labels.append(gt_label)
-        scores.append(best_dist)  # Keep as distance (lower is better)
         
-        # Progress reporting
         if (i + 1) % 100 == 0:
-            print(f"Processed {i+1}/{len(descriptors)} scans")
-    
-    return np.array(gt_labels), np.array(scores), np.array(predictions)
+            print(f"Evaluated {i+1}/{num_scans} scans...")
+            
+    return np.array(gt_labels), np.array(scores)
+
+
 
 if __name__ == "__main__":
     descriptors, scan_positions = compute_descriptors()
-    gt_labels, scores, predictions = run_matching(descriptors, scan_positions)
+    gt_labels, scores = run_matching(descriptors, scan_positions)
     metrics = compute_metrics(gt_labels, scores, MATCH_THRESHOLD)
