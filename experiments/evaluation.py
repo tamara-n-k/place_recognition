@@ -5,14 +5,15 @@ from src.similarity import scan_context_nn_distance
 import os
 from pathlib import Path
 from sklearn.metrics import precision_recall_curve, average_precision_score, roc_auc_score
-import matplotlib.pyplot as plt
+from plot_metrics import plot_evaluation_map, plot_precision_recall_curve
+
 
 ROOT_DIR = Path(__file__).parent.parent
 SCAN_DIR = os.path.join(ROOT_DIR, "data/2012-01-08_vel/2012-01-08/velodyne_sync")
 GT_DIR = os.path.join(ROOT_DIR, "data/groundtruth_2012-01-08.csv")
 
 # Parameters
-MATCH_THRESHOLD = 0.5  # Scan Context distance threshold (typically 0.3-0.7)
+MATCH_THRESHOLD = 1.0  # Scan Context distance threshold
 TEMPORAL_WINDOW = 20  # Exclude scans within this many frames
 GT_DISTANCE_THRESHOLD = 15.0  # meters for ground truth loop closure
 
@@ -26,7 +27,6 @@ def get_pose_for_scan(scan_ts, gt_ts, gt_pos):
     return gt_pos[idx]
 
 def compute_metrics(gt_labels, scores, match_threshold):
-    """Compute comprehensive evaluation metrics"""
     gt_labels = np.array(gt_labels)
     scores = np.array(scores)
     
@@ -81,19 +81,8 @@ def compute_metrics(gt_labels, scores, match_threshold):
     print(f"  TP: {tp}, FP: {fp}, TN: {tn}, FN: {fn}")
     print("="*50 + "\n")
     
-    # Plot PR curve
-    plt.figure(figsize=(10, 6))
-    plt.plot(recall, precision, linewidth=2)
-    plt.xlabel("Recall", fontsize=12)
-    plt.ylabel("Precision", fontsize=12)
-    plt.title(f"Precision-Recall Curve (AP={ap:.4f})", fontsize=14)
-    plt.grid(True, alpha=0.3)
-    plt.xlim([0, 1])
-    plt.ylim([0, 1.05])
-    plt.tight_layout()
-    plt.savefig("precision_recall_curve.png", dpi=300)
-    plt.show()
-    
+    plot_precision_recall_curve(recall, precision, ap)
+
     return {
         'ap': ap,
         'precision': precision_at_threshold,
@@ -127,36 +116,54 @@ def compute_descriptors():
     return descriptors, scan_positions
 
 def run_matching(descriptors, scan_positions):
+    # Pre-compute all Ring Keys
+    sc_obj = ScanContext()
+    ring_keys = np.array([sc_obj.compute_ring_key(d) for d in descriptors])
+    
     scores = []
     gt_labels = []
-    
     num_scans = len(descriptors)
     
-    for i in range(len(descriptors)):
-        # Find valid candidates (outside temporal window)
-        candidate_indices = [j for j in range(len(descriptors)) 
-                           if abs(i - j) >= TEMPORAL_WINDOW]
-        
-        if not candidate_indices:
-            continue
+    # TOP_K determines how many candidates to check
+    TOP_K = 50 
+
+    for i in range(num_scans):
+        # identify candidates outside temporal window
+        candidate_indices = [j for j in range(num_scans) if abs(i - j) >= 50]
+        if not candidate_indices: continue
             
-        # find distance to the closest candidate
-        dists = [scan_context_nn_distance(descriptors[i], descriptors[j]) for j in candidate_indices]
+        # find Top K loop closure candidates using Ring Keys (L2 Distance)
+        query_rk = ring_keys[i]
+        cand_rk = ring_keys[candidate_indices]
+        
+        # Euclidean distance
+        rk_dists = np.linalg.norm(cand_rk - query_rk, axis=1)
+        
+        # Get the indices of the best candidates
+        # argsort gives indices relative to cand_rk, so map back to candidate_indices
+        best_cand_indices = np.array(candidate_indices)[np.argsort(rk_dists)[:TOP_K]]
+
+        # full Scan Context distance only on the best candidates
+        dists = [scan_context_nn_distance(descriptors[i], descriptors[best_cand_indices[j]]) 
+                 for j in range(len(best_cand_indices))]
+        
         best_dist = min(dists)
-        best_j = candidate_indices[np.argmin(dists)]
+        best_j = best_cand_indices[np.argmin(dists)]
         
-        # determine if that specific best match is a ground truth loop
+        # Ground Truth and Results
         gt_dist = np.linalg.norm(scan_positions[i] - scan_positions[best_j])
-        gt_label = 1 if gt_dist < GT_DISTANCE_THRESHOLD else 0
-        
+        gt_labels.append(1 if gt_dist < GT_DISTANCE_THRESHOLD else 0)
         scores.append(best_dist)
-        gt_labels.append(gt_label)
         
         if (i + 1) % 100 == 0:
-            print(f"Evaluated {i+1}/{num_scans} scans...")
-            
-    return np.array(gt_labels), np.array(scores)
+            print(f"Processed {i+1}/{num_scans} scans using Ring Key filter...")
 
+    all_positions = np.array(scan_positions) 
+    all_gt_labels = np.array(gt_labels)
+    all_scores = np.array(scores)
+    
+    plot_evaluation_map(all_positions, all_gt_labels, all_scores, threshold=1.0)
+    return np.array(gt_labels), np.array(scores)
 
 
 if __name__ == "__main__":
