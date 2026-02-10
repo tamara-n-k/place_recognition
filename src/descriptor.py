@@ -41,10 +41,3 @@ class ScanContext:
         np.maximum.at(desc, (r_bin, s_bin), z_vals)
         
         return desc
-    
-    def compute_ring_key(self, desc):
-        """
-        Computes the rotation-invariant Ring Key.
-        Each element is the average height of a ring.
-        """
-        return np.mean(desc, axis=1)
