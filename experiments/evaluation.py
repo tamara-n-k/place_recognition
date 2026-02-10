@@ -1,5 +1,5 @@
 import numpy as np
-from src.data_loader import scan_generator, load_ground_truth
+from src.data_loader import DataLoader
 from src.descriptor import ScanContext
 from src.similarity import scan_context_nn_distance
 import os
@@ -16,8 +16,8 @@ GT_DIR = os.path.join(ROOT_DIR, "data/groundtruth_2012-01-08.csv")
 MATCH_THRESHOLD = 1.0  # Scan Context distance threshold
 TEMPORAL_WINDOW = 20  # Exclude scans within this many frames
 GT_DISTANCE_THRESHOLD = 15.0  # meters for ground truth loop closure
+SUBSAMPLING = 10
 
-sc = ScanContext()
 
 def scan_timestamp_from_filename(fname):
     return int(fname.replace(".bin", ""))
@@ -90,19 +90,19 @@ def compute_metrics(gt_labels, scores, match_threshold):
         'f1': f1_at_threshold
     }
 
-def compute_descriptors():
+def compute_descriptors(data, scan):
     print("Phase 1: Computing descriptors...")
-    gt_ts, gt_pos = load_ground_truth(GT_DIR)
+    gt_ts, gt_pos = data.load_ground_truth()
     
     descriptors = []
     scan_ids = []
     scan_positions = []
     
-    for scan_id, points in scan_generator(SCAN_DIR):
+    for scan_id, points in data.scan_generator(step=SUBSAMPLING):
         ts = scan_timestamp_from_filename(scan_id)
         pose_xy = get_pose_for_scan(ts, gt_ts, gt_pos)
         
-        desc = sc.compute(points)
+        desc = scan.compute(points)
         
         descriptors.append(desc)
         scan_ids.append(scan_id)
@@ -117,8 +117,7 @@ def compute_descriptors():
 
 def run_matching(descriptors, scan_positions):
     # Pre-compute all Ring Keys
-    sc_obj = ScanContext()
-    ring_keys = np.array([sc_obj.compute_ring_key(d) for d in descriptors])
+    ring_keys = np.array([np.mean(d, axis=1) for d in descriptors])
     
     scores = []
     gt_labels = []
@@ -161,12 +160,14 @@ def run_matching(descriptors, scan_positions):
     all_positions = np.array(scan_positions) 
     all_gt_labels = np.array(gt_labels)
     all_scores = np.array(scores)
-    
+
     plot_evaluation_map(all_positions, all_gt_labels, all_scores, threshold=1.0)
     return np.array(gt_labels), np.array(scores)
 
 
 if __name__ == "__main__":
-    descriptors, scan_positions = compute_descriptors()
+    data = DataLoader(SCAN_DIR, GT_DIR)
+    scan = ScanContext()
+    descriptors, scan_positions = compute_descriptors(data, scan)
     gt_labels, scores = run_matching(descriptors, scan_positions)
     metrics = compute_metrics(gt_labels, scores, MATCH_THRESHOLD)
