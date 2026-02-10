@@ -21,15 +21,15 @@ SUBSAMPLING = 10
 data = DataLoader(SCAN_DIR, GT_DIR)
 sc = ScanContext()
 matcher = Matcher(distance_threshold=GT_DISTANCE_THRESHOLD)
-evaluator = Evaluator(matcher, match_threshold=MATCH_THRESHOLD)
 
 # Run Pipeline
 processor = Processor(data=data, sc=sc)
 descriptors, scan_positions = processor.compute_descriptors(subsampling=SUBSAMPLING)
 
 gt_labels, scores = matcher.run_matching(descriptors, scan_positions)
+evaluator = Evaluator(matcher, match_threshold=MATCH_THRESHOLD, gt_labels=gt_labels, scores=scores)
 
 # Print & Plot
-metrics = evaluator.compute_metrics(gt_labels, scores)
-# evaluator.plot_precision_recall_curve(evaluator.recall, evaluator.precision, evaluator.ap)
-# evaluator.plot_trajectory_map()
+metrics = evaluator.compute_metrics()
+evaluator.plot_precision_recall_curve()
+evaluator.plot_trajectory_map(scan_positions)
