@@ -12,15 +12,15 @@ SCAN_DIR = os.path.join(ROOT_DIR, "data/2012-01-08_vel/2012-01-08/velodyne_sync"
 GT_DIR = os.path.join(ROOT_DIR, "data/groundtruth_2012-01-08.csv")
 
 # Parameters
-MATCH_THRESHOLD = 1.0  # Scan Context distance threshold
+MATCH_THRESHOLD = 0.8  # Scan Context distance threshold
 TEMPORAL_WINDOW = 20  # Exclude scans within this many frames
 GT_DISTANCE_THRESHOLD = 15.0  # meters for ground truth loop closure
 SUBSAMPLING = 10
 
 
 data = DataLoader(SCAN_DIR, GT_DIR)
-sc = ScanContext()
-matcher = Matcher(distance_threshold=GT_DISTANCE_THRESHOLD)
+sc = ScanContext(num_rings=40, num_sectors=80, mask_low=0.2, mask_high=10.0)
+matcher = Matcher(temporal_window=TEMPORAL_WINDOW, distance_threshold=GT_DISTANCE_THRESHOLD)
 
 # Run Pipeline
 processor = Processor(data=data, sc=sc)
@@ -33,3 +33,4 @@ evaluator = Evaluator(matcher, match_threshold=MATCH_THRESHOLD, gt_labels=gt_lab
 metrics = evaluator.compute_metrics()
 evaluator.plot_precision_recall_curve()
 evaluator.plot_trajectory_map(scan_positions)
+evaluator.save_results_to_csv()
