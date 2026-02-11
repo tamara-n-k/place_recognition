@@ -2,10 +2,12 @@
 import numpy as np
 
 class ScanContext:
-    def __init__(self, num_rings=20, num_sectors=60, max_range=80.0):
+    def __init__(self, num_rings=20, num_sectors=60, max_range=80.0, mask_low=0.2, mask_high=10.0):
         self.num_rings = num_rings
         self.num_sectors = num_sectors
         self.max_range = max_range
+        self.mask_low = mask_low
+        self.mask_high = mask_high
 
 
     def compute(self, points):
@@ -15,7 +17,7 @@ class ScanContext:
         z_up = -z 
         
         # filter: 0.2m to 10m above the ground
-        mask = (z_up > 0.2) & (z_up < 10.0) 
+        mask = (z_up > self.mask_low) & (z_up < self.mask_high) 
         x, y, z_up = x[mask], y[mask], z_up[mask]
 
         # convert to polar coordinates
