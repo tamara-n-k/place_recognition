@@ -24,13 +24,10 @@ class Matcher:
         scores = []
         gt_labels = []
         num_scans = len(descriptors)
-        
-        # TOP_K determines how many candidates to check
-        TOP_K = 50 
 
         for i in range(num_scans):
             # identify candidates outside temporal window
-            candidate_indices = [j for j in range(num_scans) if abs(i - j) >= 50]
+            candidate_indices = [j for j in range(num_scans) if abs(i - j) >= self.temporal_window]
             if not candidate_indices: continue
                 
             # find Top K loop closure candidates using Ring Keys (L2 Distance)
@@ -42,7 +39,7 @@ class Matcher:
             
             # Get the indices of the best candidates
             # argsort gives indices relative to cand_rk, so map back to candidate_indices
-            best_cand_indices = np.array(candidate_indices)[np.argsort(rk_dists)[:TOP_K]]
+            best_cand_indices = np.array(candidate_indices)[np.argsort(rk_dists)[:self.top_k]]
 
             # full Scan Context distance only on the best candidates
             dists = [self.l1_sim(descriptors[i], descriptors[best_cand_indices[j]]) 
@@ -59,11 +56,6 @@ class Matcher:
             if (i + 1) % 100 == 0:
                 print(f"Processed {i+1}/{num_scans} scans using Ring Key filter...")
 
-        # all_positions = np.array(scan_positions) 
-        # all_gt_labels = np.array(gt_labels)
-        # all_scores = np.array(scores)
-
-        # plot_evaluation_map(all_positions, all_gt_labels, all_scores, threshold=1.0)
         return np.array(gt_labels), np.array(scores)
 
 
